@@ -18,6 +18,20 @@ Non serve nessun server o hosting: è tutto su GitHub.
 
 Per aggiornare subito i dati: tab **Actions** → *Aggiorna aste e pubblica* → **Run workflow**.
 
+## Avvisi Telegram per le nuove aste
+
+A ogni aggiornamento `scripts/alert.mjs` confronta le aste con quelle già viste (`state/visti.json`) e invia su Telegram solo le nuove che corrispondono alle ricerche salvate. Configurazione nei **Secrets** del repository (Settings → Secrets and variables → Actions), così le ricerche restano private:
+
+| Secret | Contenuto |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | token del bot creato con @BotFather |
+| `TELEGRAM_CHAT_ID` | il tuo ID Telegram (te lo dice @userinfobot) |
+| `ALERTS` | una o più ricerche in JSON, es. `[{"nome":"Casa","tipo":"IMMOBILI","provincia":"Ascoli Piceno","prezzoMax":150000}]` |
+
+Campi utilizzabili in una ricerca: `nome`, `tipo` (IMMOBILI, MOBILI, AZIENDE, CREDITI, ALTRO), `categoria` (es. IMMOBILE_RESIDENZIALE), `regione`, `provincia`, `comune`, `centro` (`[lat, lng]`) con `raggioKm`, `prezzoMin`, `prezzoMax`, `parole`.
+
+Alla prima esecuzione arriva un messaggio di conferma con il numero di aste attuali; dopo, solo le nuove.
+
 ## In locale
 
 Richiede Node.js 20+ e nessuna dipendenza.
