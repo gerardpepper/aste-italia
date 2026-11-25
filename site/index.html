@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aste Italia</title>
+<meta name="description" content="Tutte le aste giudiziarie attive in Italia, filtrabili per territorio, tipo di bene e prezzo.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#1c2230; --muted:#667085; --line:#e4e7ec; --accent:#0b5cad; --accent-soft:#e8f1fb; --warn:#b54708; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151b; --panel:#1b2029; --ink:#e7eaf0; --muted:#98a2b3; --line:#2b3240; --accent:#5aa2f0; --accent-soft:#1d2c40; --warn:#f0a35a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header .src { color:var(--muted); font-size:13px; }
+  header a { color:var(--accent); }
+  .layout { display:grid; grid-template-columns:300px 1fr; min-height:calc(100vh - 54px); }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:16px; }
+  aside h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:18px 0 6px; }
+  aside h3:first-child { margin-top:0; }
+  label { display:block; font-size:13px; margin:8px 0 3px; }
+  input, select { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; min-width:0; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .seg button { flex:1; border:0; padding:6px; background:transparent; color:var(--ink); cursor:pointer; font:inherit; }
+  .seg button.on { background:var(--accent); color:#fff; }
+  .chk { display:flex; align-items:center; gap:6px; margin:6px 0; font-size:13px; } .chk input { width:auto; }
+  .btn { width:100%; margin-top:16px; padding:9px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; font:inherit; }
+  .btn.sec { background:transparent; color:var(--accent); border:1px solid var(--line); margin-top:8px; }
+  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  main { padding:16px 20px; min-width:0; }
+  .stats { color:var(--muted); margin-bottom:12px; } .stats b { color:var(--ink); }
+  .err { color:var(--warn); }
+  #map { height:340px; border-radius:8px; border:1px solid var(--line); margin-bottom:14px; display:none; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
+  .card .top { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--muted); }
+  .tag { background:var(--accent-soft); color:var(--accent); padding:1px 7px; border-radius:10px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card h4 { margin:0; font-size:14px; line-height:1.3; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .price { font-size:17px; font-weight:700; } .price small { font-weight:400; color:var(--muted); font-size:12px; }
+  .meta { font-size:12px; color:var(--muted); }
+  .card a { color:var(--accent); font-size:13px; text-decoration:none; margin-top:auto; }
+  .empty { padding:40px; text-align:center; color:var(--muted); }
+  @media (max-width:800px) { .layout { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } main { padding:16px; } }
+</style>
+</head>
+<body>
+<header><h1>Aste Italia</h1><span class="src" id="srcinfo">caricamento dati…</span></header>
+<div class="layout">
+<aside>
+  <form id="f">
+    <h3>Cosa</h3>
+    <label for="q">Parole chiave</label>
+    <input id="q" placeholder="es. villa, trattore, rolex, Tivoli…">
+    <label for="tipo">Tipo di bene</label>
+    <select id="tipo">
+      <option value="">Tutti</option>
+      <option value="IMMOBILI">Immobili</option>
+      <option value="MOBILI">Beni mobili (veicoli, arredi, macchinari…)</option>
+      <option value="AZIENDE">Aziende e quote</option>
+      <option value="CREDITI">Crediti e titoli</option>
+      <option value="ALTRO">Marchi, brevetti, altro</option>
+    </select>
+    <label for="categoria">Categoria</label>
+    <select id="categoria"><option value="">Tutte</option></select>
+
+    <h3>Dove</h3>
+    <div class="seg" id="geoMode">
+      <button type="button" data-m="tutta" class="on">Tutta Italia</button>
+      <button type="button" data-m="regione">Regione</button>
+      <button type="button" data-m="raggio">Raggio</button>
+    </div>
+    <div id="g-regione" hidden>
+      <label for="regione">Regione</label>
+      <select id="regione"><option value="">Tutte</option></select>
+      <label for="provincia">Provincia</label>
+      <select id="provincia"><option value="">Tutte</option></select>
+      <label for="comune">Comune (facoltativo)</label>
+      <input id="comune" placeholder="es. Viterbo">
+    </div>
+    <div id="g-raggio" hidden>
+      <label for="centro">Centro</label>
+      <select id="centro"></select>
+      <label for="raggio">Raggio: <span id="raggioV">25</span> km</label>
+      <input id="raggio" type="range" min="5" max="150" step="5" value="25">
+      <div class="hint">Esclude gli annunci senza posizione.</div>
+    </div>
+
+    <h3>Prezzo base d'asta (€)</h3>
+    <div class="row"><input id="pmin" type="number" min="0" placeholder="min"><input id="pmax" type="number" min="0" placeholder="max"></div>
+
+    <h3>Data asta</h3>
+    <div class="row"><input id="dmin" type="date" aria-label="dal"><input id="dmax" type="date" aria-label="al"></div>
+
+    <h3>Opzioni</h3>
+    <label for="sort">Ordina per</label>
+    <select id="sort"><option value="data">Data asta (prima le più vicine)</option><option value="prezzo">Prezzo crescente</option><option value="prezzo_desc">Prezzo decrescente</option><option value="dist">Distanza (con raggio)</option></select>
+    <label class="chk"><input type="checkbox" id="showMap" checked> Mostra mappa</label>
+
+    <button class="btn" type="submit">Cerca</button>
+    <button class="btn sec" type="button" id="reset">Azzera filtri</button>
+  </form>
+</aside>
+<main>
+  <div class="stats" id="stats">Caricamento…</div>
+  <div id="map"></div>
+  <div class="grid" id="list"></div>
+  <div style="text-align:center;margin:16px 0"><button class="btn sec" id="more" style="width:auto;padding:8px 22px" hidden>Mostra altri</button></div>
+</main>
+</div>
+<script type="module">
+import { REGIONI } from './province.js';
+
+const CATS = {
+  IMMOBILI: ['IMMOBILE_RESIDENZIALE','IMMOBILE_COMMERCIALE','IMMOBILE_INDUSTRIALE','ALTRA_CATEGORIA'],
+  MOBILI: ['AUTOVEICOLI_E_CICLI','MACCHINARI_UT_MAT_PRIME','ARREDAMENTO_ELETTRO','INFORMATICA_E_ELET','ARTE_OREF_OROL_ANTIQ','ABBIGLIAMENTO_E_CALZATURE','ALTRA_CATEGORIA_M'],
+  AZIENDE: ['CESSIONE_AFFITTO','QUOTA_SOCIETARIA','ALTRA_CATEGORIA_A'],
+  CREDITI: ['CREDITI','AZIONI_TITOLI','ALTRA_CATEGORIA_V'],
+  ALTRO: ['MARCHI','BREVETTI','ALTRA_CATEGORIA_AL'],
+};
+const CENTRI = { 'Roma':[41.9028,12.4964],'Milano':[45.4642,9.19],'Napoli':[40.8518,14.2681],'Torino':[45.0703,7.6869],'Bologna':[44.4949,11.3426],'Firenze':[43.7696,11.2558],'Venezia':[45.4408,12.3155],'Genova':[44.4056,8.9463],'Bari':[41.1171,16.8719],'Palermo':[38.1157,13.3615],'Catania':[37.5079,15.083],'Cagliari':[39.2238,9.1217],'Perugia':[43.1107,12.3908],'Ancona':[43.6158,13.5189],"L'Aquila":[42.3498,13.3995],'Pescara':[42.4618,14.2161],'Trento':[46.0748,11.1217],'Bolzano':[46.4983,11.3548],'Trieste':[45.6495,13.7768],'Verona':[45.4384,10.9916],'Padova':[45.4064,11.8768],'Brescia':[45.5416,10.2118],'Catanzaro':[38.9098,16.5877],'Reggio Calabria':[38.1105,15.6613],'Potenza':[40.6404,15.8056],'Campobasso':[41.5603,14.6627],'Aosta':[45.7375,7.3154],'Salerno':[40.6824,14.7681],'Lecce':[40.3515,18.175] };
+const FILE = { IMMOBILI:'immobili', MOBILI:'mobili', AZIENDE:'aziende', CREDITI:'crediti', ALTRO:'altro' };
+const PAGE = 48;
+
+const $ = id => document.getElementById(id);
+const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const pretty = s => s ? s.toLowerCase().replace(/_/g,' ').replace(/^altra categoria.*/,'altra categoria').replace(/^\w/,c=>c.toUpperCase()) : '';
+const eur = n => n == null ? '—' : n.toLocaleString('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const km = (a,b,c,d) => { const R=6371, r=Math.PI/180, x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2; return 2*R*Math.asin(Math.sqrt(x)); };
+
+const cache = {};           // tipo -> array annunci (caricati al bisogno)
+let geoMode = 'tutta', results = [], shown = 0, map, layer, myPos = null;
+
+// ---- popolamento controlli ----
+REGIONI.forEach(r => $('regione').add(new Option(r, r)));
+$('centro').add(new Option('📍 La mia posizione', 'me'));
+Object.keys(CENTRI).forEach(c => $('centro').add(new Option(c, c)));
+$('centro').value = 'Roma';
+$('tipo').onchange = () => { const s=$('categoria'), v=s.value; s.length=1; (CATS[$('tipo').value]||[]).forEach(c=>s.add(new Option(pretty(c),c))); s.value=v; };
+$('regione').onchange = () => fillProvince();
+$('raggio').oninput = () => $('raggioV').textContent = $('raggio').value;
+const setMode = m => { geoMode = m; document.querySelectorAll('#geoMode button').forEach(x=>x.classList.toggle('on',x.dataset.m===m)); $('g-regione').hidden = m!=='regione'; $('g-raggio').hidden = m!=='raggio'; };
+document.querySelectorAll('#geoMode button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+$('reset').onclick = () => { $('f').reset(); $('tipo').onchange(); fillProvince(); $('raggioV').textContent=25; setMode('tutta'); history.replaceState(null,'',location.pathname); run(); };
+
+function fillProvince() {
+  const s = $('provincia'), v = s.value, reg = $('regione').value; s.length = 1;
+  const prov = new Set();
+  Object.values(cache).flat().forEach(x => { if (x.pr && (!reg || x.r === reg)) prov.add(x.pr); });
+  [...prov].sort((a,b)=>a.localeCompare(b,'it')).forEach(p => s.add(new Option(p, p)));
+  s.value = [...s.options].some(o=>o.value===v) ? v : '';
+}
+
+// ---- stato nell'URL (ricerche condivisibili / salvabili nei preferiti) ----
+const FIELDS = ['q','tipo','categoria','regione','provincia','comune','centro','raggio','pmin','pmax','dmin','dmax','sort'];
+function saveUrl() {
+  const p = new URLSearchParams();
+  FIELDS.forEach(f => { const v = $(f).value; if (v && !(f==='sort'&&v==='data') && !(f==='raggio'&&v==='25') && !(f==='centro'&&v==='Roma')) p.set(f, v); });
+  if (geoMode !== 'tutta') p.set('dove', geoMode);
+  history.replaceState(null, '', p.toString() ? '?' + p : location.pathname);
+}
+function loadUrl() {
+  const p = new URLSearchParams(location.search);
+  if (p.get('tipo')) { $('tipo').value = p.get('tipo'); $('tipo').onchange(); }
+  FIELDS.forEach(f => { if (p.has(f) && f!=='provincia') $(f).value = p.get(f); });
+  $('raggioV').textContent = $('raggio').value;
+  setMode(p.get('dove') || 'tutta');
+  return p.get('provincia');
+}
+
+// ---- dati ----
+async function load(tipi) {
+  await Promise.all(tipi.filter(t => !cache[t]).map(async t => {
+    const r = await fetch(`data/${FILE[t]}.json`);
+    if (!r.ok) throw new Error(`data/${FILE[t]}.json: HTTP ${r.status}`);
+    cache[t] = await r.json();
+  }));
+  return tipi.flatMap(t => cache[t]);
+}
+
+function getPos() {
+  if (myPos) return Promise.resolve(myPos);
+  return new Promise((ok, ko) => navigator.geolocation
+    ? navigator.geolocation.getCurrentPosition(p => ok(myPos = [p.coords.latitude, p.coords.longitude]), () => ko(new Error('Posizione non disponibile: consenti la geolocalizzazione o scegli una città')), {timeout:10000})
+    : ko(new Error('Geolocalizzazione non supportata')));
+}
+
+async function run() {
+  $('stats').textContent = 'Ricerca…';
+  try {
+    const tipo = $('tipo').value;
+    const all = await load(tipo ? [tipo] : Object.keys(FILE));
+    if ($('provincia').length <= 1) fillProvince();
+    const cat = $('categoria').value;
+    const words = norm($('q').value).split(/\s+/).filter(Boolean);
+    const pmin = $('pmin').value ? +$('pmin').value : null, pmax = $('pmax').value ? +$('pmax').value : null;
+    const dmin = $('dmin').value, dmax = $('dmax').value;
+    const reg = geoMode==='regione' ? $('regione').value : '', prov = geoMode==='regione' ? $('provincia').value : '';
+    const com = geoMode==='regione' ? norm($('comune').value.trim()) : '';
+    let center = null, radius = +$('raggio').value;
+    if (geoMode==='raggio') center = $('centro').value==='me' ? await getPos() : CENTRI[$('centro').value];
+
+    results = [];
+    for (const x of all) {
+      if (cat && x.c !== cat) continue;
+      if (pmin != null && (x.p ?? 0) < pmin) continue;
+      if (pmax != null && (x.p == null || x.p > pmax)) continue;
+      if (dmin && (!x.dt || x.dt.slice(0,10) < dmin)) continue;
+      if (dmax && (!x.dt || x.dt.slice(0,10) > dmax)) continue;
+      if (reg && x.r !== reg) continue;
+      if (prov && x.pr !== prov) continue;
+      if (com && !norm(x.ci).includes(com)) continue;
+      if (center) { if (x.la == null) continue; x._km = km(center[0],center[1],x.la,x.lo); if (x._km > radius) continue; } else x._km = null;
+      if (words.length) {
+        const hay = x._h ??= norm([x.d, x.ci, x.pr, x.tr, x.v, pretty(x.c), ...(x.s||[]).map(pretty)].join(' '));
+        if (!words.every(w => hay.includes(w))) continue;
+      }
+      results.push(x);
+    }
+    const s = $('sort').value;
+    const key = s==='prezzo' ? x => x.p ?? Infinity : s==='prezzo_desc' ? x => -(x.p ?? 0) : s==='dist' && center ? x => x._km : x => x.dt || '9999';
+    results.sort((a,b) => { const ka=key(a), kb=key(b); return ka<kb?-1:ka>kb?1:0; });
+
+    saveUrl();
+    $('stats').innerHTML = `<b>${results.length.toLocaleString('it-IT')}</b> aste trovate` + (center ? ` entro ${radius} km` : '');
+    shown = 0; $('list').innerHTML = ''; more(); drawMap();
+  } catch (e) { $('stats').innerHTML = `<span class="err">Errore: ${esc(e.message)}</span>`; }
+}
+
+function card(x) {
+  const d = x.dt ? new Date(x.dt) : null;
+  const luogo = [x.ci, x.pr && x.pr !== x.ci ? `(${x.pr})` : ''].filter(Boolean).join(' ') || 'luogo n.d.';
+  return `<div class="card">
+    <div class="top"><span class="tag">${esc(pretty(x.c) || x.t)}</span><span>${d ? d.toLocaleDateString('it-IT',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}) + ' ' + d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : ''}</span></div>
+    <h4>${esc(x.d || pretty(x.c))}</h4>
+    <div class="price">${eur(x.p)} ${x.o && x.o !== x.p ? `<small>offerta min. ${eur(x.o)}</small>` : ''}</div>
+    <div class="meta">📍 ${esc(luogo)}${x._km != null ? ` · ${x._km.toFixed(1)} km` : ''}</div>
+    <div class="meta">${[x.tr && 'Tribunale di ' + x.tr, x.di].filter(Boolean).map(esc).join(' · ')}</div>
+    <a href="https://pvp.giustizia.it/pvp/it/detail_annuncio.page?idAnnuncio=${x.i}" target="_blank" rel="noopener">Vedi annuncio ufficiale →</a>
+  </div>`;
+}
+function more() {
+  const next = results.slice(shown, shown + PAGE);
+  if (!results.length) $('list').innerHTML = '<div class="empty">Nessuna asta trovata con questi filtri.</div>';
+  else $('list').insertAdjacentHTML('beforeend', next.map(card).join(''));
+  shown += next.length;
+  $('more').hidden = shown >= results.length;
+  $('more').textContent = `Mostra altri (${(results.length - shown).toLocaleString('it-IT')} rimanenti)`;
+}
+
+function drawMap() {
+  const pts = results.filter(x => x.la != null);
+  const show = $('showMap').checked && pts.length > 0;
+  $('map').style.display = show ? 'block' : 'none';
+  if (!show) return;
+  if (!map) {
+    map = L.map('map', { preferCanvas: true }).setView([42.5, 12.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+    layer = L.featureGroup().addTo(map);
+  }
+  map.invalidateSize();
+  layer.clearLayers();
+  pts.slice(0, 4000).forEach(x => L.circleMarker([x.la, x.lo], { radius: 5, weight: 1, color: x.ap ? '#7a8699' : '#0b5cad', fillOpacity: .7 })
+    .bindPopup(`<b>${eur(x.p)}</b> · ${esc(x.ci || '')}<br>${esc((x.d || '').slice(0, 140))}<br><a href="https://pvp.giustizia.it/pvp/it/detail_annuncio.page?idAnnuncio=${x.i}" target="_blank" rel="noopener">Apri annuncio</a>${x.ap ? '<br><i>posizione approssimata al comune</i>' : ''}`)
+    .addTo(layer));
+  map.fitBounds(layer.getBounds(), { padding: [20, 20], maxZoom: 13 });
+}
+
+$('f').onsubmit = e => { e.preventDefault(); run(); };
+$('more').onclick = more;
+$('showMap').onchange = drawMap;
+
+// avvio
+const provDaUrl = loadUrl();
+fetch('data/meta.json').then(r => r.json()).then(m => {
+  const tot = Object.values(m.tipi).reduce((a, b) => a + b, 0);
+  $('srcinfo').innerHTML = `${tot.toLocaleString('it-IT')} aste attive dal <a href="https://pvp.giustizia.it/pvp/" target="_blank" rel="noopener">Portale Vendite Pubbliche</a> · aggiornato ${new Date(m.aggiornato).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}`;
+}).catch(() => $('srcinfo').textContent = 'dati non ancora disponibili');
+run().then(() => { if (provDaUrl) { fillProvince(); $('provincia').value = provDaUrl; run(); } });
+</script>
+</body>
+</html>

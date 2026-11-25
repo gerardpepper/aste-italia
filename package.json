@@ -1,0 +1,12 @@
+{
+  "name": "aste-italia",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tutte le aste giudiziarie attive in Italia, filtrabili per territorio, tipo di bene e prezzo. Sito statico su GitHub Pages aggiornato da GitHub Actions.",
+  "scripts": {
+    "fetch": "node scripts/fetch-pvp.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

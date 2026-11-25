@@ -1,0 +1,3 @@
+# I dati vengono generati da GitHub Actions a ogni aggiornamento e pubblicati su Pages, non salvati nel repository
+site/data/
+node_modules/
