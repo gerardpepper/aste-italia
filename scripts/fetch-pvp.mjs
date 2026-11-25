@@ -18,6 +18,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
 const cityKey = x => `${(x.ci || '').trim().toLowerCase()}|${(x.pr || '').trim().toLowerCase()}`;
 const round = n => Math.round(n * 1e5) / 1e5;
+// Riquadro geografico dell'Italia: coordinate fuori da qui sono errori di inserimento nel PVP
+const inItalia = (la, lo) => la != null && lo != null && la > 35.2 && la < 47.2 && lo > 6.5 && lo < 18.6;
 
 async function pagina(tipo, page, tentativo = 1) {
   const qs = new URLSearchParams({ language: 'it', page: String(page), size: String(PAGE_SIZE) });
@@ -46,6 +48,8 @@ function compatta(c) {
   const ind = c.indirizzo || {};
   const prov = ind.provincia || null;
   const tr = c.tribunale ? c.tribunale.replace(/^Tribunale di /i, '') : null;
+  const la = ind.coordinate?.latitudine ?? null, lo = ind.coordinate?.longitudine ?? null;
+  const coordOk = inItalia(la, lo);
   return {
     i: c.id,
     t: c.tipoLotto,
@@ -59,8 +63,8 @@ function compatta(c) {
     // regione dalla provincia; in mancanza, dalla sede del tribunale (se è un capoluogo)
     r: (prov && REGIONE_DI[norm(prov)]) || (tr && REGIONE_DI[norm(tr)]) || null,
     v: ind.via ? ind.via.slice(0, 120) : null,
-    la: ind.coordinate?.latitudine ?? null,
-    lo: ind.coordinate?.longitudine ?? null,
+    la: coordOk ? la : null,
+    lo: coordOk ? lo : null,
     dt: c.dataOraVendita || null,
     tr,
     di: [...new Set(c.disponibilita || [])].map(x => DISP[x]).filter(Boolean).join(', ') || null,
@@ -95,7 +99,7 @@ let cache = {};
 try { cache = JSON.parse(await readFile(GEOCACHE, 'utf8')); } catch { /* prima esecuzione */ }
 
 async function geocodifica(ci, pr) {
-  const qs = new URLSearchParams({ city: ci, country: 'Italia', format: 'json', limit: '1', 'accept-language': 'it' });
+  const qs = new URLSearchParams({ city: ci, countrycodes: 'it', format: 'json', limit: '1', 'accept-language': 'it' });
   if (pr) qs.set('county', pr);
   const res = await fetch(`https://nominatim.openstreetmap.org/search?${qs}`, {
     headers: { 'User-Agent': 'aste-italia/1.0 (geocodifica comuni, con cache)' },
@@ -103,7 +107,7 @@ async function geocodifica(ci, pr) {
   });
   if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   const j = await res.json();
-  if (j[0]) return [round(+j[0].lat), round(+j[0].lon)];
+  if (j[0] && inItalia(+j[0].lat, +j[0].lon)) return [round(+j[0].lat), round(+j[0].lon)];
   if (pr) { await sleep(1100); return geocodifica(ci, null); } // riprova senza provincia
   return null;
 }
