@@ -32,6 +32,7 @@
   .hint { font-size:12px; color:var(--muted); margin-top:4px; }
   main { padding:16px 20px; min-width:0; }
   .stats { color:var(--muted); margin-bottom:12px; } .stats b { color:var(--ink); }
+  .lnk { background:none; border:0; padding:0; color:var(--accent); text-decoration:underline; cursor:pointer; font:inherit; }
   .err { color:var(--warn); }
   #map { height:340px; border-radius:8px; border:1px solid var(--line); margin-bottom:14px; display:none; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:12px; }
@@ -132,7 +133,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const km = (a,b,c,d) => { const R=6371, r=Math.PI/180, x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2; return 2*R*Math.asin(Math.sqrt(x)); };
 
 const cache = {};           // tipo -> array annunci (caricati al bisogno)
-let geoMode = 'tutta', results = [], shown = 0, map, layer, myPos = null;
+let geoMode = 'tutta', results = [], vista = [], shown = 0, map, layer, myPos = null;
+let area = null, fitting = false, statsBase = ''; // area = porzione di mappa visibile dopo zoom/spostamento dell'utente
 
 // ---- popolamento controlli ----
 REGIONI.forEach(r => $('regione').add(new Option(r, r)));
@@ -225,8 +227,8 @@ async function run() {
     results.sort((a,b) => { const ka=key(a), kb=key(b); return ka<kb?-1:ka>kb?1:0; });
 
     saveUrl();
-    $('stats').innerHTML = `<b>${results.length.toLocaleString('it-IT')}</b> aste trovate` + (center ? ` entro ${radius} km` : '');
-    shown = 0; $('list').innerHTML = ''; more(); drawMap();
+    statsBase = `<b>${results.length.toLocaleString('it-IT')}</b> aste trovate` + (center ? ` entro ${radius} km` : '');
+    area = null; drawMap(); renderList();
   } catch (e) { $('stats').innerHTML = `<span class="err">Errore: ${esc(e.message)}</span>`; }
 }
 
@@ -242,7 +244,15 @@ function card(x) {
     <a href="https://pvp.giustizia.it/pvp/it/detail_annuncio.page?idAnnuncio=${x.i}" target="_blank" rel="noopener">Vedi annuncio ufficiale →</a>
   </div>`;
 }
+// Lista: tutte le aste trovate, oppure solo quelle nella zona visibile se l'utente ha zoomato/spostato la mappa
+function renderList() {
+  vista = area ? results.filter(x => x.la != null && area.contains([x.la, x.lo])) : results;
+  $('stats').innerHTML = statsBase + (area ? ` · <b>${vista.length.toLocaleString('it-IT')}</b> nella zona visibile sulla mappa <button class="lnk" id="tutta">mostra tutte</button>` : '');
+  if (area) $('tutta').onclick = () => { area = null; fit(); renderList(); };
+  shown = 0; $('list').innerHTML = ''; more();
+}
 function more() {
+  const results = vista;
   const next = results.slice(shown, shown + PAGE);
   if (!results.length) $('list').innerHTML = '<div class="empty">Nessuna asta trovata con questi filtri.</div>';
   else $('list').insertAdjacentHTML('beforeend', next.map(card).join(''));
@@ -260,18 +270,26 @@ function drawMap() {
     map = L.map('map', { preferCanvas: true }).setView([42.5, 12.5], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
     layer = L.featureGroup().addTo(map);
+    // zoom o spostamento fatti dall'utente: la lista mostra solo la zona visibile
+    map.on('moveend', () => { if (fitting) return; area = map.getBounds(); renderList(); });
   }
-  map.invalidateSize();
+  fitting = true; map.invalidateSize(); fitting = false;
   layer.clearLayers();
   pts.slice(0, 4000).forEach(x => L.circleMarker([x.la, x.lo], { radius: 5, weight: 1, color: x.ap ? '#7a8699' : '#0b5cad', fillOpacity: .7 })
     .bindPopup(`<b>${eur(x.p)}</b> · ${esc(x.ci || '')}<br>${esc((x.d || '').slice(0, 140))}<br><a href="https://pvp.giustizia.it/pvp/it/detail_annuncio.page?idAnnuncio=${x.i}" target="_blank" rel="noopener">Apri annuncio</a>${x.ap ? '<br><i>posizione approssimata al comune</i>' : ''}`)
     .addTo(layer));
-  map.fitBounds(layer.getBounds(), { padding: [20, 20], maxZoom: 13 });
+  fit();
+}
+function fit() {
+  if (!map || !layer.getLayers().length) return;
+  fitting = true;
+  map.fitBounds(layer.getBounds(), { padding: [20, 20], maxZoom: 13, animate: false });
+  fitting = false;
 }
 
 $('f').onsubmit = e => { e.preventDefault(); run(); };
 $('more').onclick = more;
-$('showMap').onchange = drawMap;
+$('showMap').onchange = () => { area = null; drawMap(); renderList(); };
 
 // avvio
 const provDaUrl = loadUrl();
